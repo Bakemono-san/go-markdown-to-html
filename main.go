@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
+	"runtime"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/russross/blackfriday/v2"
@@ -29,7 +31,7 @@ const (
 
 func main() {
 	filename := flag.String("file", "", "Markdown file to preview")
-
+	skipPreview := flag.Bool("s", false, "skip the auto-preview functionality")
 	flag.Parse()
 
 	if *filename == "" {
@@ -38,14 +40,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*filename, os.Stdout); err != nil {
+	if err := run(*filename, os.Stdout, *skipPreview); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
 }
 
-func run(filename string, out io.Writer) error {
+func run(filename string, out io.Writer, skipPreview bool) error {
 	input, err := ioutil.ReadFile(filename)
 
 	if err != nil {
@@ -69,7 +71,17 @@ func run(filename string, out io.Writer) error {
 
 	fmt.Fprintln(out, outName)
 
-	return saveHtml(outName, htmlData)
+	if err := saveHtml(outName, htmlData); err != nil {
+		return err
+	}
+
+	if skipPreview {
+		return nil
+	}
+
+	return preview(outName)
+
+	// return saveHtml(outName, htmlData)
 }
 
 func parseContent(input []byte) []byte {
@@ -90,4 +102,31 @@ func parseContent(input []byte) []byte {
 func saveHtml(outName string, data []byte) error {
 	// write the bytes to the file
 	return ioutil.WriteFile(outName, data, 0644)
+}
+
+func preview(filename string) error {
+	cName := ""
+	cParams := []string{}
+
+	switch runtime.GOOS {
+	case "linux":
+		cName = "xdg-open"
+	case "windows":
+		cName = "cmd.exe"
+		cParams = []string{"/C", "start"}
+	case "darwin":
+		cName = "open"
+	default:
+		return fmt.Errorf("OS not supported")
+	}
+
+	cParams = append(cParams, filename)
+
+	cPath, err := exec.LookPath(cName)
+
+	if err != nil {
+		return err
+	}
+
+	return exec.Command(cPath, cParams...).Run()
 }
